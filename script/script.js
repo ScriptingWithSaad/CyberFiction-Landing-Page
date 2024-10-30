@@ -46,7 +46,7 @@ window.addEventListener("resize", function () {
 
 function files(index) {
     const data = `
-       ../assets/images/male0001.png
+       /CyberFiction-Landing-Page/assets/images/male0001.png
 /CyberFiction-Landing-Page/assets/images/male0002.png
 /CyberFiction-Landing-Page/assets/images/male0003.png
 /CyberFiction-Landing-Page/assets/images/male0004.png
