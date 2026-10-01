@@ -16,7 +16,7 @@ function packBuffer(pack, preview) {
 }
 
 function harness({ cached = false, compact = false, reduced = false, saveData = false, seeded = false } = {}) {
-  const tasks = [], requests = [], draws = [], decodes = [], timers = new Map();
+  const tasks = [], requests = [], draws = [], decodes = [], individual = [], timers = new Map();
   let timerId = 0;
   class Element {
     constructor() { this.listeners = {}; this.dataset = {}; this.classList = {add(){}, toggle(){}}; this.offsetHeight = 720; }
@@ -43,8 +43,12 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
         this.naturalWidth = 384;
         this.naturalHeight = 216;
         this.onload();
+      } else if (value.startsWith('assets/frames/')) {
+        this.url = value;
+        individual.push(this);
       }
     }
+    complete() { this.naturalWidth = 1280; this.naturalHeight = 720; this.onload(); }
   }
   const window = new Element();
   window.createImageBitmap = true;
@@ -76,7 +80,7 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
       for(const [id,fn] of [...timers]) { timers.delete(id); fn(); }
     }
   }
-  return { elements, requests, draws, decodes, sandbox, window, flush,
+  return { elements, requests, draws, decodes, individual, sandbox, window, flush,
     async loadPoster() { poster.naturalWidth=1280; poster.naturalHeight=720; poster.fire('load'); await flush(); },
     async scroll(y) { sandbox.scrollY=y; window.fire('scroll'); await flush(); } };
 }
@@ -98,6 +102,9 @@ test('an embedded seed changes the frame before a preview pack downloads', async
   await h.scroll(360);
   assert.equal(h.elements['#sequence'].dataset.frame,'25');
   assert.equal(h.requests.length,3);
+  assert.match(h.individual[0].url,/desktop\/025.webp$/);
+  h.individual[0].complete(); await h.flush();
+  assert.equal(h.draws.at(-1).naturalWidth,1280);
 });
 
 test('full-size packs start after the lightweight preview finishes', async () => {
