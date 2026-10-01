@@ -196,7 +196,6 @@
       const blob = frameBlob(index);
       const promise = "createImageBitmap" in window
         ? createImageBitmap(blob, { resizeWidth: width, resizeHeight: height })
-            .catch(() => imageFromBlob(blob))
         : imageFromBlob(blob);
       promise
         .then((image) => {

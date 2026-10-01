@@ -5,8 +5,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../script/script.js'), 'utf8');
 
+function packBuffer(pack) {
+  const bytes = [];
+  for (let i = 0; i < 16 && pack * 16 + i < 151; i++) {
+    bytes.push(1, 0, 0, 0, pack * 16 + i);
+  }
+  return Uint8Array.from(bytes).buffer;
+}
+
 function harness({ cached = false, compact = false, reduced = false, saveData = false } = {}) {
-  const tasks = [], requests = [], draws = [];
+  const tasks = [], requests = [], draws = [], decodes = [], timers = new Map();
+  let timerId = 0;
   class Element {
     constructor() { this.listeners = {}; this.dataset = {}; this.classList = {add(){}, toggle(){}}; this.offsetHeight = 720; }
     addEventListener(name, fn) { this.listeners[name] = fn; }
@@ -21,66 +30,100 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
   poster.naturalWidth = cached ? 1280 : 0;
   poster.naturalHeight = cached ? 720 : 0;
   poster.decode = () => Promise.resolve();
-  elements['#sequence'].getContext = () => ({clearRect(){},drawImage(image){assert.ok(image.naturalWidth > 0); draws.push(image);}});
+  elements['#sequence'].getContext = () => ({clearRect(){},drawImage(image){assert.ok(image.naturalWidth || image.width); draws.push(image);}});
+  class FakeBlob {
+    constructor(parts) { this.bytes = new Uint8Array(parts[0]); }
+  }
   class FakeImage {
-    constructor() { this.naturalWidth = 0; this.naturalHeight = 0; requests.push(this); }
-    decode() { return Promise.resolve(); }
-    completeSuccessfully() { this.naturalWidth = 1280; this.naturalHeight = 720; this.onload(); }
+    constructor() { this.naturalWidth = 0; this.naturalHeight = 0; }
   }
   const window = new Element();
+  window.createImageBitmap = true;
   const document = new Element();
   document.querySelector = selector => elements[selector];
   document.documentElement = new Element();
   document.hidden = false;
   const sandbox = { document, window, navigator: {connection:{saveData}}, Image:FakeImage,
+    Blob:FakeBlob, DataView, Error,
+    fetch: url => new Promise(resolve => requests.push({url, complete() {
+      const match = url.match(/(\d\d)\.bin$/);
+      resolve({ok:true,arrayBuffer:()=>Promise.resolve(packBuffer(Number(match[1])))});
+    }})),
+    createImageBitmap: blob => {
+      const image={width:1280,height:720,index:blob.bytes[0],close(){}};
+      decodes.push(image.index);
+      return Promise.resolve(image);
+    },
     matchMedia: query => ({matches:query.includes('reduced') ? reduced : compact, addEventListener(){}}),
-    scrollY:0, devicePixelRatio:1, requestAnimationFrame:fn => {tasks.push(fn); return tasks.length;}, setTimeout, clearTimeout };
+    scrollY:0, devicePixelRatio:1, requestAnimationFrame:fn => {tasks.push(fn); return tasks.length;},
+    setTimeout:fn => {timers.set(++timerId,fn); return timerId;},
+    clearTimeout:id => timers.delete(id) };
   vm.runInNewContext(source, sandbox);
-  async function flush() { await Promise.resolve(); await Promise.resolve(); while(tasks.length) tasks.shift()(); }
-  return { elements, requests, draws, sandbox, window, flush,
+  async function flush() {
+    for(let i=0;i<20;i++) {
+      await Promise.resolve();
+      while(tasks.length) tasks.shift()();
+      for(const [id,fn] of [...timers]) { timers.delete(id); fn(); }
+    }
+  }
+  return { elements, requests, draws, decodes, sandbox, window, flush,
     async loadPoster() { poster.naturalWidth=1280; poster.naturalHeight=720; poster.fire('load'); await flush(); },
     async scroll(y) { sandbox.scrollY=y; window.fire('scroll'); await flush(); } };
 }
 
-test('first decoded poster paints without a scroll and requests no other frames', async () => {
+test('poster paints at load and the ten compressed packs start before scrolling', async () => {
   const h=harness(); assert.equal(h.draws.length,0); await h.loadPoster();
-  assert.equal(h.elements['#sequence'].dataset.frame,'0'); assert.equal(h.requests.length,0);
+  assert.equal(h.elements['#sequence'].dataset.frame,'0');
+  assert.equal(h.requests.length,10);
+  assert.match(h.requests[0].url,/desktop\/00.bin$/);
 });
-test('already cached poster also paints immediately', async () => {
-  const h=harness({cached:true}); await h.flush(); assert.equal(h.elements['#sequence'].dataset.frame,'0');
+
+test('cached poster also paints immediately', async () => {
+  const h=harness({cached:true}); await h.flush();
+  assert.equal(h.elements['#sequence'].dataset.frame,'0');
 });
-test('requests are bounded and missing frames never clear the current image', async () => {
+
+test('a loaded pack supplies multiple scrub frames without another request', async () => {
   const h=harness(); await h.loadPoster(); await h.scroll(1080);
-  assert.equal(h.requests.length,3); assert.match(h.requests[0].src,/075.webp$/);
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
-  h.requests[0].completeSuccessfully(); await h.flush();
+  h.requests[4].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'75');
-  h.requests[1].onerror(); await h.flush(); assert.equal(h.elements['#sequence'].dataset.frame,'75');
+  const count=h.requests.length;
+  await h.scroll(1100);
+  assert.equal(h.elements['#sequence'].dataset.frame,'76');
+  assert.equal(h.requests.length,count);
+  assert.ok(h.decodes.includes(75) && h.decodes.includes(76));
 });
-test('fast scrolling prioritizes the new target rather than painting stale requests', async () => {
+
+test('fast scrolling draws the newest frame when its pack is ready', async () => {
   const h=harness(); await h.loadPoster(); await h.scroll(300); await h.scroll(2100);
-  h.requests[0].completeSuccessfully(); await h.flush();
-  assert.equal(h.elements['#sequence'].dataset.frame,'0');
-  assert.match(h.requests[3].src,/146.webp$/);
-  h.requests[3].completeSuccessfully(); await h.flush(); assert.equal(h.elements['#sequence'].dataset.frame,'146');
+  h.requests[1].complete(); await h.flush();
+  assert.notEqual(h.elements['#sequence'].dataset.frame,'146');
+  h.requests[9].complete(); await h.flush();
+  assert.equal(h.elements['#sequence'].dataset.frame,'146');
 });
-test('mobile scrolls through its own compressed frame sequence', async () => {
+
+test('mobile requests its small packs and scrubs from them', async () => {
   const h=harness({compact:true}); await h.loadPoster(); await h.scroll(1000);
-  assert.equal(h.requests.length,3);
-  assert.match(h.requests[0].src,/assets\/frames\/mobile\/069.webp$/);
-  h.requests[0].completeSuccessfully(); await h.flush();
+  assert.equal(h.requests.length,10);
+  assert.match(h.requests[4].url,/mobile\/04.bin$/);
+  h.requests[4].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'69');
 });
-test('reduced-motion and data-saver modes do not download a sequence', async () => {
+
+test('reduced motion and data saver skip background pack downloads', async () => {
   for(const options of [{reduced:true},{saveData:true}]) {
     const h=harness(options); await h.loadPoster(); await h.scroll(1000);
-    assert.equal(h.requests.length,0); assert.equal(h.elements['#sequence'].dataset.frame,'0');
+    assert.equal(h.requests.length,0);
+    assert.equal(h.elements['#sequence'].dataset.frame,'0');
   }
 });
-test('pause stops new requests and return to top restores frame zero', async () => {
+
+test('pause stops decoding and returning to top restores the poster', async () => {
   const h=harness(); await h.loadPoster(); h.elements['#motion-toggle'].fire('click');
-  await h.scroll(1000); assert.equal(h.requests.length,0);
+  await h.scroll(1000); h.requests[4].complete(); await h.flush();
+  assert.equal(h.decodes.length,0);
   h.elements['#motion-toggle'].fire('click'); await h.flush();
-  assert.equal(h.requests.length,3); h.requests[0].completeSuccessfully(); await h.flush();
+  assert.equal(h.elements['#sequence'].dataset.frame,'69');
   await h.scroll(0); assert.equal(h.elements['#sequence'].dataset.frame,'0');
 });

@@ -12,18 +12,9 @@
   const frameCount = 151;
   const packSize = 16;
   const packCount = Math.ceil(frameCount / packSize);
-  const cacheLimit = 12;
+  const cacheLimit = 24;
   const variant = compact.matches ? "mobile" : "desktop";
   const cache = new Map();
-  const proxies = new Array(frameCount);
-  const warming = new Set();
-  const anchors = [50, 100, 150, 25, 75, 125];
-  const warmQueue = [
-    ...anchors,
-    ...Array.from({ length: frameCount - 1 }, (_, i) => i + 1).filter(
-      (index) => !anchors.includes(index),
-    ),
-  ];
   const packs = new Map();
   const packPromises = new Map();
   const failedPacks = new Set();
@@ -34,7 +25,6 @@
   let target = 0;
   let drawn = -1;
   let raf = 0;
-  let settleTimer;
   let firstReady = false;
   let paused = reduced.matches || Boolean(connection?.saveData);
   let storyTop = 0;
@@ -48,7 +38,6 @@
     else {
       if (firstReady) {
         for (let pack = 0; pack < packCount; pack++) loadPack(pack);
-        pumpProxies();
       }
       schedule();
     }
@@ -80,7 +69,7 @@
   }
 
   function draw(index) {
-    const image = cache.get(index) || proxies[index];
+    const image = cache.get(index);
     const imageWidth = image?.naturalWidth || image?.width;
     const imageHeight = image?.naturalHeight || image?.height;
     if (!imageWidth || !imageHeight) return false;
@@ -103,14 +92,6 @@
     character.classList.add("ready");
     canvas.dataset.frame = String(index);
     return true;
-  }
-
-  function drawNearest(index) {
-    if (draw(index)) return;
-    for (let distance = 1; distance < frameCount; distance++) {
-      if (index - distance >= 0 && draw(index - distance)) return;
-      if (index + distance < frameCount && draw(index + distance)) return;
-    }
   }
 
   function measure() {
@@ -138,7 +119,6 @@
         })
         .then((buffer) => {
           packs.set(pack, buffer);
-          pumpProxies();
           schedule();
           return buffer;
         })
@@ -182,33 +162,6 @@
       };
       image.src = url;
     });
-  }
-
-  function pumpProxies() {
-    if (paused || document.hidden || !firstReady) return;
-    for (const index of warmQueue) {
-      if (warming.size >= 6) break;
-      if (proxies[index] || warming.has(index)) continue;
-      if (!packs.has(Math.floor(index / packSize))) continue;
-      warming.add(index);
-      const width = compact.matches ? 512 : 768;
-      const height = Math.round(width * 9 / 16);
-      const blob = frameBlob(index);
-      const promise = "createImageBitmap" in window
-        ? createImageBitmap(blob, { resizeWidth: width, resizeHeight: height })
-            .catch(() => imageFromBlob(blob))
-        : imageFromBlob(blob);
-      promise
-        .then((image) => {
-          proxies[index] = image;
-          if (!paused && index === target) draw(index);
-        })
-        .catch(() => {})
-        .finally(() => {
-          warming.delete(index);
-          pumpProxies();
-        });
-    }
   }
 
   function decode(index) {
@@ -258,12 +211,13 @@
     const next = Math.round(progress * (frameCount - 1));
     const direction = next >= target ? 1 : -1;
     target = next;
-    if (drawn !== target) drawNearest(target);
-    // Small decoded proxies respond during scrolling. Full-size frames replace
-    // them when scrolling settles, without holding up the animation.
+    if (drawn !== target) draw(target);
+    // The ten packed downloads start after the poster. Decode only frames near
+    // the scroll position, so scrubbing does not wait for a new network request.
     const wanted = [target];
     if (progress > 0 && progress < 1) {
-      for (let i = 1; i <= 2; i++) wanted.push(target + i * direction);
+      for (let i = 1; i <= 12; i++) wanted.push(target + i * direction);
+      for (let i = 1; i <= 6; i++) wanted.push(target - i * direction);
     }
     queue = wanted.filter(
       (index) =>
@@ -272,8 +226,7 @@
         !cache.has(index) &&
         !loading.has(index),
     );
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(pump, 120);
+    pump();
   }
 
   function schedule() {
@@ -290,7 +243,6 @@
     if (firstReady) return;
     firstReady = true;
     remember(0, poster);
-    proxies[0] = poster;
     measure();
     draw(0);
     if (!paused) {
