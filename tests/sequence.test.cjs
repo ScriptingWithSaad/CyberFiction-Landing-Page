@@ -64,8 +64,15 @@ test('fast scrolling prioritizes the new target rather than painting stale reque
   assert.match(h.requests[3].src,/146.webp$/);
   h.requests[3].completeSuccessfully(); await h.flush(); assert.equal(h.elements['#sequence'].dataset.frame,'146');
 });
-test('mobile, reduced-motion and data-saver modes do not download a sequence', async () => {
-  for(const options of [{compact:true},{reduced:true},{saveData:true}]) {
+test('mobile scrolls through its own compressed frame sequence', async () => {
+  const h=harness({compact:true}); await h.loadPoster(); await h.scroll(1000);
+  assert.equal(h.requests.length,3);
+  assert.match(h.requests[0].src,/assets\/frames\/mobile\/069.webp$/);
+  h.requests[0].completeSuccessfully(); await h.flush();
+  assert.equal(h.elements['#sequence'].dataset.frame,'69');
+});
+test('reduced-motion and data-saver modes do not download a sequence', async () => {
+  for(const options of [{reduced:true},{saveData:true}]) {
     const h=harness(options); await h.loadPoster(); await h.scroll(1000);
     assert.equal(h.requests.length,0); assert.equal(h.elements['#sequence'].dataset.frame,'0');
   }

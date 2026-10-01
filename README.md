@@ -8,15 +8,15 @@ A responsive recreation of the CyberFiction scroll story, built with HTML, CSS a
 
 The original frame list began with an empty line, so its index-zero image never loaded. The page then waited on that image to trigger its initial canvas render. An eager, preloaded HTML poster now appears independently of JavaScript, and the canvas draws that same first frame as soon as it is decoded.
 
-Desktop uses native scrolling, a CSS sticky stage and a bounded image queue. It requests at most three frames concurrently, prioritizes the current position, retains the previous good frame while a replacement loads, and keeps at most 18 decoded images. It does not eagerly download all 300 originals. There are no third-party runtime, font or scrolling-library requests.
+All screen sizes use native scrolling, a CSS sticky stage and a bounded image queue. It requests at most three frames concurrently, prioritizes the current position, retains the previous good frame while a replacement loads, and keeps at most 18 decoded desktop images or 12 mobile images. It does not eagerly download all 300 originals. There are no third-party runtime, font or scrolling-library requests.
 
-At widths up to 900px, four lightweight character images sit with their corresponding content in normal document flow. The desktop sequence is not requested on mobile/tablet. Reduced-motion and data-saver preferences also prevent sequence downloads by default. A keyboard-accessible motion toggle pauses animation.
+At widths up to 900px, scrolling scrubs through the smaller mobile WebP sequence. The chapter text stays on alternating left and right sides, with narrow screens using top and bottom positions to leave room for the character. Reduced-motion and data-saver preferences prevent sequence downloads by default. A keyboard-accessible motion toggle pauses animation.
 
 ## Image sizes
 
 - Original: 300 PNG files, 73,500,727 bytes.
 - Desktop: 151 WebP frames, 7,363,456 bytes (about 90% smaller).
-- Mobile variants: 3,004,686 bytes in total; the page uses only four static frames.
+- Mobile variants: 3,004,686 bytes in total, requested as the visitor scrolls.
 - First frame: 53,650 bytes desktop / 22,136 bytes mobile.
 
 These are file-size comparisons, not network speed or Lighthouse scores. Original PNGs remain available as editing sources. Smaller displays may receive the larger responsive poster on high-density screens.

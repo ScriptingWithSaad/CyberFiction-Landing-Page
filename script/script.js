@@ -96,7 +96,7 @@
   }
 
   function pump() {
-    if (paused || compact.matches || document.hidden || !firstReady) return;
+    if (paused || document.hidden || !firstReady) return;
     while (loading.size < maxWorkers && queue.length) {
       const index = queue.shift();
       if (
@@ -137,7 +137,7 @@
 
   function update() {
     raf = 0;
-    if (paused || compact.matches || document.hidden || !firstReady) return;
+    if (paused || document.hidden || !firstReady) return;
     const progress = Math.max(
       0,
       Math.min(1, (scrollY - storyTop) / scrollDistance),
