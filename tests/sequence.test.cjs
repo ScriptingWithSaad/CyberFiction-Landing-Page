@@ -107,12 +107,13 @@ test('an embedded seed changes the frame before a preview pack downloads', async
   assert.equal(h.draws.at(-1).naturalWidth,1280);
 });
 
-test('full-size packs start after the lightweight preview finishes', async () => {
+test('finishing the preview does not start bulk high-resolution downloads', async () => {
   const h=harness(); await h.loadPoster();
   h.requests[0].complete(); h.requests[1].complete(); h.requests[2].complete();
   await h.flush();
-  assert.equal(h.requests.length,13);
-  assert.match(h.requests[3].url,/packs\/desktop\/00.bin$/);
+  assert.equal(h.requests.length,3);
+  await h.scroll(1080);
+  assert.match(h.individual[0].url,/desktop\/075.webp$/);
 });
 
 test('a loaded preview pack supplies multiple scrub frames without another request', async () => {
