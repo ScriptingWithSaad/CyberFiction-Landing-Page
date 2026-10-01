@@ -77,7 +77,7 @@ test('poster paints at load and the tiny preview packs start first', async () =>
   const h=harness(); assert.equal(h.draws.length,0); await h.loadPoster();
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
   assert.equal(h.requests.length,3);
-  assert.match(h.requests[0].url,/preview\/00.bin$/);
+  assert.match(h.requests[0].url,/preview\/v2\/00.bin$/);
 });
 
 test('cached poster also paints immediately', async () => {
@@ -116,7 +116,7 @@ test('fast scrolling draws the newest frame when its pack is ready', async () =>
 test('mobile shares the tiny preview and scrubs from it', async () => {
   const h=harness({compact:true}); await h.loadPoster(); await h.scroll(1000);
   assert.equal(h.requests.length,3);
-  assert.match(h.requests[1].url,/preview\/01.bin$/);
+  assert.match(h.requests[1].url,/preview\/v2\/01.bin$/);
   h.requests[1].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'69');
 });
