@@ -5,10 +5,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../script/script.js'), 'utf8');
 
-function packBuffer(pack) {
+function packBuffer(pack, preview) {
   const bytes = [];
-  for (let i = 0; i < 16 && pack * 16 + i < 151; i++) {
-    bytes.push(1, 0, 0, 0, pack * 16 + i);
+  const size = preview ? 51 : 16;
+  const count = 151;
+  for (let i = 0; i < size && pack * size + i < count; i++) {
+    bytes.push(1, 0, 0, 0, pack * size + i);
   }
   return Uint8Array.from(bytes).buffer;
 }
@@ -47,7 +49,7 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
     Blob:FakeBlob, DataView, Error,
     fetch: url => new Promise(resolve => requests.push({url, complete() {
       const match = url.match(/(\d\d)\.bin$/);
-      resolve({ok:true,arrayBuffer:()=>Promise.resolve(packBuffer(Number(match[1])))});
+      resolve({ok:true,arrayBuffer:()=>Promise.resolve(packBuffer(Number(match[1]),url.includes('/preview/')))});
     }})),
     createImageBitmap: blob => {
       const image={width:1280,height:720,index:blob.bytes[0],close(){}};
@@ -71,11 +73,11 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
     async scroll(y) { sandbox.scrollY=y; window.fire('scroll'); await flush(); } };
 }
 
-test('poster paints at load and the ten compressed packs start before scrolling', async () => {
+test('poster paints at load and the tiny preview packs start first', async () => {
   const h=harness(); assert.equal(h.draws.length,0); await h.loadPoster();
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
-  assert.equal(h.requests.length,10);
-  assert.match(h.requests[0].url,/desktop\/00.bin$/);
+  assert.equal(h.requests.length,3);
+  assert.match(h.requests[0].url,/preview\/00.bin$/);
 });
 
 test('cached poster also paints immediately', async () => {
@@ -83,10 +85,18 @@ test('cached poster also paints immediately', async () => {
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
 });
 
-test('a loaded pack supplies multiple scrub frames without another request', async () => {
+test('full-size packs start after the lightweight preview finishes', async () => {
+  const h=harness(); await h.loadPoster();
+  h.requests[0].complete(); h.requests[1].complete(); h.requests[2].complete();
+  await h.flush();
+  assert.equal(h.requests.length,13);
+  assert.match(h.requests[3].url,/packs\/desktop\/00.bin$/);
+});
+
+test('a loaded preview pack supplies multiple scrub frames without another request', async () => {
   const h=harness(); await h.loadPoster(); await h.scroll(1080);
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
-  h.requests[4].complete(); await h.flush();
+  h.requests[1].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'75');
   const count=h.requests.length;
   await h.scroll(1100);
@@ -97,17 +107,17 @@ test('a loaded pack supplies multiple scrub frames without another request', asy
 
 test('fast scrolling draws the newest frame when its pack is ready', async () => {
   const h=harness(); await h.loadPoster(); await h.scroll(300); await h.scroll(2100);
-  h.requests[1].complete(); await h.flush();
+  h.requests[0].complete(); await h.flush();
   assert.notEqual(h.elements['#sequence'].dataset.frame,'146');
-  h.requests[9].complete(); await h.flush();
+  h.requests[2].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'146');
 });
 
-test('mobile requests its small packs and scrubs from them', async () => {
+test('mobile shares the tiny preview and scrubs from it', async () => {
   const h=harness({compact:true}); await h.loadPoster(); await h.scroll(1000);
-  assert.equal(h.requests.length,10);
-  assert.match(h.requests[4].url,/mobile\/04.bin$/);
-  h.requests[4].complete(); await h.flush();
+  assert.equal(h.requests.length,3);
+  assert.match(h.requests[1].url,/preview\/01.bin$/);
+  h.requests[1].complete(); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'69');
 });
 
@@ -121,7 +131,7 @@ test('reduced motion and data saver skip background pack downloads', async () =>
 
 test('pause stops decoding and returning to top restores the poster', async () => {
   const h=harness(); await h.loadPoster(); h.elements['#motion-toggle'].fire('click');
-  await h.scroll(1000); h.requests[4].complete(); await h.flush();
+  await h.scroll(1000); h.requests[1].complete(); await h.flush();
   assert.equal(h.decodes.length,0);
   h.elements['#motion-toggle'].fire('click'); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'69');

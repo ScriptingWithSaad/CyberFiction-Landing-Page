@@ -39,7 +39,17 @@ for variant in ['mobile', 'desktop']:
             assert pack[offset:offset + length] == frame, f'Corrupt packed frame: {variant}/{index}'
             offset += length
         assert offset == len(pack), f'Unexpected bytes in {variant}/{pack_index:02}.bin'
+for pack_index in range(3):
+    pack = (ROOT / f'assets/preview/{pack_index:02}.bin').read_bytes()
+    offset = 0
+    for index in range(pack_index * 51, min((pack_index + 1) * 51, 151)):
+        length = struct.unpack_from('<I', pack, offset)[0]
+        offset += 4
+        frame = pack[offset:offset + length]
+        assert frame[:4] == b'RIFF' and frame[8:12] == b'WEBP', f'Bad preview frame: {index}'
+        offset += length
+    assert offset == len(pack), f'Unexpected bytes in preview/{pack_index:02}.bin'
 script = (ROOT / 'script/script.js').read_text(encoding='utf-8')
 assert 'const frameCount = 151;' in script
 assert not re.search(r'https?://', (ROOT / 'index.html').read_text(encoding='utf-8').split('</head>')[0]), 'Unexpected external startup dependency'
-print(f'PASS: {len(page.assets)} HTML assets, 302 frames, 20 verified packs, unique IDs and section anchors.')
+print(f'PASS: {len(page.assets)} HTML assets, 302 frames, 20 full packs, 3 preview packs, unique IDs and section anchors.')
