@@ -49,6 +49,8 @@ for pack_index in range(3):
         assert frame[:4] == b'RIFF' and frame[8:12] == b'WEBP', f'Bad preview frame: {index}'
         offset += length
     assert offset == len(pack), f'Unexpected bytes in preview/v2/{pack_index:02}.bin'
+seed_script = (ROOT / 'assets/site/seed.v2.js').read_text(encoding='utf-8')
+assert seed_script.count('data:image/webp;base64,') == 6, 'Missing immediate seed frames'
 script = (ROOT / 'script/script.js').read_text(encoding='utf-8')
 assert 'const frameCount = 151;' in script
 assert not re.search(r'https?://', (ROOT / 'index.html').read_text(encoding='utf-8').split('</head>')[0]), 'Unexpected external startup dependency'

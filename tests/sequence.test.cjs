@@ -15,7 +15,7 @@ function packBuffer(pack, preview) {
   return Uint8Array.from(bytes).buffer;
 }
 
-function harness({ cached = false, compact = false, reduced = false, saveData = false } = {}) {
+function harness({ cached = false, compact = false, reduced = false, saveData = false, seeded = false } = {}) {
   const tasks = [], requests = [], draws = [], decodes = [], timers = new Map();
   let timerId = 0;
   class Element {
@@ -38,9 +38,17 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
   }
   class FakeImage {
     constructor() { this.naturalWidth = 0; this.naturalHeight = 0; }
+    set src(value) {
+      if (value.startsWith('data:')) {
+        this.naturalWidth = 384;
+        this.naturalHeight = 216;
+        this.onload();
+      }
+    }
   }
   const window = new Element();
   window.createImageBitmap = true;
+  window.CyberFictionSeeds = seeded ? [[25,'data:image/webp;base64,fake']] : [];
   const document = new Element();
   document.querySelector = selector => elements[selector];
   document.documentElement = new Element();
@@ -83,6 +91,13 @@ test('poster paints at load and the tiny preview packs start first', async () =>
 test('cached poster also paints immediately', async () => {
   const h=harness({cached:true}); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
+});
+
+test('an embedded seed changes the frame before a preview pack downloads', async () => {
+  const h=harness({seeded:true}); await h.loadPoster();
+  await h.scroll(360);
+  assert.equal(h.elements['#sequence'].dataset.frame,'25');
+  assert.equal(h.requests.length,3);
 });
 
 test('full-size packs start after the lightweight preview finishes', async () => {
