@@ -103,6 +103,7 @@ test('an embedded seed changes the frame before a preview pack downloads', async
   assert.equal(h.elements['#sequence'].dataset.frame,'25');
   assert.equal(h.requests.length,3);
   assert.match(h.individual[0].url,/desktop\/025.webp$/);
+  assert.equal(h.individual[0].fetchPriority,'high');
   h.individual[0].complete(); await h.flush();
   assert.equal(h.draws.at(-1).naturalWidth,1280);
 });
