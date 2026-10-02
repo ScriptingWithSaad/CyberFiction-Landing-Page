@@ -1,6 +1,8 @@
 """Check all local HTML assets, frame variants, IDs and section anchors."""
 from html.parser import HTMLParser
 from pathlib import Path
+import base64
+import json
 import re
 import struct
 
@@ -51,6 +53,12 @@ for pack_index in range(3):
     assert offset == len(pack), f'Unexpected bytes in preview/v2/{pack_index:02}.bin'
 seed_script = (ROOT / 'assets/site/seed.v2.js').read_text(encoding='utf-8')
 assert seed_script.count('data:image/webp;base64,') == 6, 'Missing immediate seed frames'
+hd_seeds = json.loads((ROOT / 'assets/site/seed.hd.v1.js').read_text(encoding='utf-8').split('=', 1)[1].strip().rstrip(';'))
+assert len(hd_seeds) == 6, 'Missing HD keyframes'
+for index, uri in hd_seeds:
+    assert base64.b64decode(uri.split(',', 1)[1]) == (ROOT / f'assets/frames/desktop/{index:03}.webp').read_bytes(), 'HD keyframe differs from its full-size source'
+html = (ROOT / 'index.html').read_text(encoding='utf-8')
+assert 'assets/preview/' not in html and 'seed.v2.js' not in html, 'Low-resolution startup dependency'
 script = (ROOT / 'script/script.js').read_text(encoding='utf-8')
 assert 'const frameCount = 151;' in script
 assert not re.search(r'https?://', (ROOT / 'index.html').read_text(encoding='utf-8').split('</head>')[0]), 'Unexpected external startup dependency'

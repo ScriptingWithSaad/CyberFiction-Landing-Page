@@ -8,16 +8,18 @@ A responsive recreation of the CyberFiction scroll story, built with HTML, CSS a
 
 The original frame list began with an empty line, so its index-zero image never loaded. The page then waited on that image to trigger its initial canvas render. An eager, preloaded HTML poster now appears independently of JavaScript, and the canvas draws that same first frame as soon as it is decoded.
 
-All screen sizes use native scrolling, a CSS sticky stage and compressed WebP frames. Six small seed frames (about 27 KB) arrive with JavaScript, so even a first scroll before the preview downloads changes the character. A 511 KB preview sequence in three packs then supplies all 151 frames for continuous scrubbing. When scrolling settles, only the current full-size frame is requested; this avoids competing with the preview for bandwidth. Up to 12 full-size frames remain decoded for revisits. The previous good frame remains visible if a requested frame has not arrived yet. GSAP and ScrollTrigger are bundled locally, so startup needs no external CDN or font requests.
+All screen sizes use native scrolling, a CSS sticky stage and compressed WebP frames. Scrolling and resting use the same full-detail images: 1280×720 on desktop and retina screens, and 768×432 on lower-density small screens. The tiny low-quality preview is no longer drawn. Six embedded full-resolution keyframes (388 KB) allow an early scroll to change the pose before the complete sequence arrives.
 
-The three story chapters pin for one additional viewport each, restoring the original six-viewport animation range. Text stays in place while scrolling continues to advance the character; frames follow scroll directly without a smoothing delay. A thin navigation progress line shows the journey through the story. At widths up to 900px, scrolling scrubs through the smaller mobile WebP sequence. The chapter text stays on alternating left and right sides, with phones and portrait tablets using top and bottom positions to leave room for the character. Phone landscape has a separate compact column layout. Reduced-motion and data-saver preferences prevent sequence downloads by default. A keyboard-accessible motion toggle pauses animation.
+Ten HD packs download ahead of scrolling with at most three pack requests at a time, starting near the current position. The complete compressed sequence costs about 7.36 MB for desktop/retina or 3 MB for mobile. Only a nearby window is decoded, capped at 32 frames on desktop and 20 on small screens; evicted bitmaps are closed. The current frame is also requested immediately when its pack is still loading, with at most two such requests. There is no wait-for-scroll-to-stop timer and no switch from blurry to sharp images. During a cold download, the closest available sharp frame stays visible until the exact frame arrives. Resize changes invalidate older results so a late mobile download cannot replace an upgraded desktop frame. GSAP and ScrollTrigger are bundled locally, so startup needs no external CDN or font requests.
+
+The three story chapters pin for one additional viewport each, restoring the original six-viewport animation range. Text stays in place while scrolling continues to advance the character; frames follow scroll directly without a smoothing delay. A thin navigation progress line shows the journey through the story. Phone and portrait-tablet text uses top and bottom positions; phone landscape has a separate column layout. Reduced-motion and data-saver preferences prevent sequence pack downloads by default, and a keyboard-accessible motion toggle pauses animation.
 
 ## Image sizes
 
 - Original: 300 PNG files, 73,500,727 bytes.
-- Desktop: 151 WebP frames, 7,363,456 bytes (about 90% smaller); only the needed full-size frames are downloaded.
-- Mobile variants: 3,004,686 bytes; only the needed full-size frames are downloaded.
-- First-pass preview: 510,668 bytes across three packs, shared by desktop and mobile.
+- Desktop: 151 WebP frames, 7,363,456 bytes (about 90% smaller); the compressed sequence is prefetched for continuous sharp scrubbing.
+- Mobile variants: 3,004,686 bytes; the compressed sequence is prefetched for continuous sharp scrubbing.
+- Legacy preview: 510,668 bytes; retained for cached older HTML, no longer requested by the current page.
 - First frame: 53,650 bytes desktop / 22,136 bytes mobile.
 
 These are file-size comparisons, not network speed or Lighthouse scores. Original PNGs remain available as editing sources. Smaller displays may receive the larger responsive poster on high-density screens.
@@ -28,7 +30,7 @@ Run `python -m http.server 8767` from this directory.
 
 After CSS or JavaScript changes, run `python scripts/build_assets.py`. Commit the updated HTML and generated `assets/site` files together; content hashes prevent stale CSS/JavaScript combinations. Keep previous generated assets available for cached HTML.
 
-To regenerate image variants, install Pillow and run `python scripts/optimize_frames.py`, followed by `python scripts/build_preview.py`. The retained full-size packs can be rebuilt with `python scripts/build_packs.py` if needed for other uses; the page does not download them.
+To regenerate image variants, install Pillow and run `python scripts/optimize_frames.py`, followed by `python scripts/build_preview.py`. Rebuild HD packs with `python scripts/build_packs.py` and the immediate sharp keyframes with `python scripts/build_hd_seeds.py`. Legacy preview assets remain available for cached older versions.
 
 ## Checks
 
@@ -38,4 +40,4 @@ node --check script/script.js
 python scripts/verify_assets.py
 ```
 
-Tests cover first-load and cached-image rendering, preview-first loading, fast scrolling, pause, return to top, and mobile/reduced-motion/data-saver behavior. The asset verifier checks every full-size packed frame against its WebP source and validates the preview packs. Browser checks cover the initial unscrolled page, animation progress, responsive layouts and navigation.
+Tests cover sharp first-load and cached-image rendering, consistent full-resolution scrolling, bounded prefetch and decoded memory, fast jumps and reverse scrolling, viewport upgrades, corrupt packs, image-decoder fallback, original pinned pacing, pause, return to top, and mobile/reduced-motion/data-saver behavior. The asset verifier checks every full-size packed frame against its WebP source and validates the preview packs. Browser checks cover the initial unscrolled page, animation progress, responsive layouts and navigation.
