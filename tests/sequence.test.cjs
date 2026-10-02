@@ -15,8 +15,9 @@ function packBuffer(pack, preview) {
   return Uint8Array.from(bytes).buffer;
 }
 
-function harness({ cached = false, compact = false, reduced = false, saveData = false, seeded = false } = {}) {
+function harness({ cached = false, compact = false, reduced = false, saveData = false, seeded = false, pinned = false, badPreview = -1 } = {}) {
   const tasks = [], requests = [], draws = [], decodes = [], individual = [], timers = new Map();
+  const pins = [], refreshListeners = [];
   let timerId = 0;
   class Element {
     constructor() { this.listeners = {}; this.dataset = {}; this.classList = {add(){}, toggle(){}}; this.offsetHeight = 720; }
@@ -66,12 +67,31 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
     createImageBitmap: blob => {
       const image={width:1280,height:720,index:blob.bytes[0],close(){}};
       decodes.push(image.index);
+      if (image.index === badPreview) return Promise.reject(new Error('Bad image'));
       return Promise.resolve(image);
     },
     matchMedia: query => ({matches:query.includes('reduced') ? reduced : compact, addEventListener(){}}),
     scrollY:0, devicePixelRatio:1, requestAnimationFrame:fn => {tasks.push(fn); return tasks.length;},
     setTimeout:fn => {timers.set(++timerId,fn); return timerId;},
     clearTimeout:id => timers.delete(id) };
+  if (pinned) {
+    const chapters = [new Element(), new Element(), new Element()];
+    document.querySelectorAll = () => chapters;
+    sandbox.gsap = window.gsap = {
+      registerPlugin(){},
+      matchMedia: () => ({add(query, fn) { if (!reduced) fn(); }}),
+    };
+    sandbox.ScrollTrigger = window.ScrollTrigger = {
+      config(){},
+      create(options) {
+        pins.push(options);
+        // Model the extra layout space inserted by each pinned section.
+        elements['#story'].offsetHeight += Number(options.end().slice(2));
+      },
+      refresh() { refreshListeners.forEach(fn => fn()); },
+      addEventListener(name, fn) { if (name === 'refresh') refreshListeners.push(fn); },
+    };
+  }
   vm.runInNewContext(source, sandbox);
   async function flush() {
     for(let i=0;i<20;i++) {
@@ -80,7 +100,7 @@ function harness({ cached = false, compact = false, reduced = false, saveData = 
       for(const [id,fn] of [...timers]) { timers.delete(id); fn(); }
     }
   }
-  return { elements, requests, draws, decodes, individual, sandbox, window, flush,
+  return { elements, requests, draws, decodes, individual, pins, sandbox, window, flush,
     async loadPoster() { poster.naturalWidth=1280; poster.naturalHeight=720; poster.fire('load'); await flush(); },
     async scroll(y) { sandbox.scrollY=y; window.fire('scroll'); await flush(); } };
 }
@@ -95,6 +115,32 @@ test('poster paints at load and the tiny preview packs start first', async () =>
 test('cached poster also paints immediately', async () => {
   const h=harness({cached:true}); await h.flush();
   assert.equal(h.elements['#sequence'].dataset.frame,'0');
+});
+
+test('reading pauses extend the story while the character keeps following scroll', async () => {
+  const h=harness({pinned:true}); await h.loadPoster();
+  assert.equal(h.pins.length,3);
+  assert.equal(h.elements['#story'].offsetHeight,5040);
+  h.requests.forEach(request => request.complete()); await h.flush();
+  await h.scroll(900); assert.equal(h.elements['#sequence'].dataset.frame,'31');
+  await h.scroll(1200); assert.equal(h.elements['#sequence'].dataset.frame,'42');
+  await h.scroll(2160); assert.equal(h.elements['#sequence'].dataset.frame,'75');
+  await h.scroll(4320); assert.equal(h.elements['#sequence'].dataset.frame,'150');
+  await h.scroll(0); assert.equal(h.elements['#sequence'].dataset.frame,'0');
+});
+
+test('reduced motion leaves chapters in normal reading flow', async () => {
+  const h=harness({pinned:true,reduced:true}); await h.loadPoster();
+  assert.equal(h.pins.length,0);
+  assert.equal(h.elements['#story'].offsetHeight,2880);
+});
+
+test('a damaged preview frame is skipped without an endless decode loop', async () => {
+  const h=harness({badPreview:25}); await h.loadPoster();
+  h.requests.forEach(request => request.complete()); await h.flush();
+  await h.scroll(360);
+  assert.equal(h.decodes.filter(index => index === 25).length,1);
+  assert.ok(h.draws.length > 0);
 });
 
 test('an embedded seed changes the frame before a preview pack downloads', async () => {
