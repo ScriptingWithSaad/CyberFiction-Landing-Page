@@ -13,6 +13,7 @@ def build():
     for source, name, extension, pattern in [
         ('stylesheets/style.css', 'style', 'css', r'(?:stylesheets/style\.css|assets/site/style\.[a-f0-9]+\.css)'),
         ('script/script.js', 'app', 'js', r'(?:script/script\.js|assets/site/app\.[a-f0-9]+\.js)'),
+        ('script/mobile-layout.js', 'mobile', 'js', r'(?:script/mobile-layout\.js|assets/site/mobile\.[a-f0-9]+\.js)'),
     ]:
         content = (ROOT / source).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
         digest = hashlib.sha256(content.encode('utf-8')).hexdigest()[:12]
